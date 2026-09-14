@@ -63,12 +63,17 @@ jobs:
 
       - name: Build
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Repo-level secrets, already present and shared with ci.yml -- no
+          # need to duplicate them into the environment.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           # Same-origin: CloudFront routes /api/* to the RAG service, so the
           # SPA never makes a cross-origin call and the CSP needs no extra
           # connect-src entry.
           VITE_NFI_RAG_URL: /api
+          # Optional. Unset resolves to an empty string, which the app treats
+          # as "feature off" -- Sentry stays disabled and Google sign-in is
+          # hidden. Set them as environment variables to turn them on.
           VITE_ROOT_DOMAIN: ${{ vars.VITE_ROOT_DOMAIN }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_ENABLE_GOOGLE_SIGNIN: ${{ vars.VITE_ENABLE_GOOGLE_SIGNIN }}
