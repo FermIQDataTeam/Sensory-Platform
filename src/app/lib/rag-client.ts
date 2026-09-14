@@ -28,6 +28,47 @@ function requestId() {
  * carry the tenant and role claims supplied by the access-token hook. Cookies
  * stay disabled so browser calls use one auditable authentication mechanism.
  */
+/**
+ * CloudFront reaches the RAG API through a Lambda function URL protected by an
+ * Origin Access Control, which signs every origin request with SigV4. Lambda
+ * does not accept unsigned payloads, so a request carrying a body must present
+ * a SHA-256 of that body in `x-amz-content-sha256` or the origin rejects the
+ * signature with a 403 before the application ever sees it.
+ *
+ * GET and HEAD carry no body and need nothing.
+ *
+ * https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html
+ */
+async function addBodyHash(headers: Headers, body: BodyInit | null | undefined): Promise<void> {
+  if (body === null || body === undefined) return;
+  if (headers.has('x-amz-content-sha256')) return;
+
+  let bytes: Uint8Array;
+  if (typeof body === 'string') {
+    bytes = new TextEncoder().encode(body);
+  } else if (body instanceof Uint8Array) {
+    bytes = body;
+  } else if (body instanceof ArrayBuffer) {
+    bytes = new Uint8Array(body);
+  } else if (body instanceof Blob) {
+    bytes = new Uint8Array(await body.arrayBuffer());
+  } else {
+    // FormData, URLSearchParams and ReadableStream serialise in ways we cannot
+    // reproduce here without consuming the body. Nothing in this client sends
+    // those today; if that changes, serialise to a string or Blob first rather
+    // than letting the request fail at the origin with an opaque 403.
+    throw new Error(
+      'Evidence Assist requests must use a string, Blob or buffer body so the payload hash can be computed.',
+    );
+  }
+
+  const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  headers.set('x-amz-content-sha256', hex);
+}
+
 export async function ragFetch(path: string, init: RagRequestInit = {}): Promise<Response> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new Error(`Unable to authenticate the Evidence Assist request: ${error.message}`);
@@ -41,6 +82,7 @@ export async function ragFetch(path: string, init: RagRequestInit = {}): Promise
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (!headers.has('X-Request-ID')) headers.set('X-Request-ID', requestId());
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  await addBodyHash(headers, init.body);
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const timeoutMs = Math.min(
