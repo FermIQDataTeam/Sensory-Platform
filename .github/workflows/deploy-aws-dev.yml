@@ -1,0 +1,126 @@
+name: Deploy AWS dev
+
+# Publishes the SPA to the nfi-ai-dev account (229521609454, eu-west-2):
+# S3 dev-nfi-ai-sensory-web behind CloudFront, which also serves the RAG API
+# from the same origin under /api/*.
+#
+# Runs alongside the existing Vercel deployment rather than replacing it --
+# both can be fed from main until the AWS environment is signed off.
+#
+# Credentials come from GitHub OIDC. The role trusts only refs/heads/main on
+# this repo; no long-lived AWS key exists in the repo or in settings.
+#
+# Infrastructure lives in FermIQDataTeam/Sensory-Analysis-RAG under
+# infra/aws-dev -- one CloudFront distribution fronts both halves, so it is
+# defined once, in the repo that also owns the API.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "vite.config.ts"
+      - ".github/workflows/deploy-aws-dev.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-aws-dev
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: aws-dev
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-
+
+      - name: Install
+        run: npx pnpm@10 install --frozen-lockfile
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Same-origin: CloudFront routes /api/* to the RAG service, so the
+          # SPA never makes a cross-origin call and the CSP needs no extra
+          # connect-src entry.
+          VITE_NFI_RAG_URL: /api
+          VITE_ROOT_DOMAIN: ${{ vars.VITE_ROOT_DOMAIN }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_ENABLE_GOOGLE_SIGNIN: ${{ vars.VITE_ENABLE_GOOGLE_SIGNIN }}
+          VITE_APP_VERSION: ${{ github.sha }}
+        run: npx pnpm@10 run build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Two passes, because the caching rules differ and S3 stores
+      # Cache-Control per object. Fingerprinted assets first so they are in
+      # place before anything can reference them.
+      - name: Upload fingerprinted assets
+        run: |
+          set -euo pipefail
+          aws s3 sync dist/ "s3://${{ vars.WEB_BUCKET }}/" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload index.html
+        run: |
+          set -euo pipefail
+          # Never cached: it is the file that names the current asset hashes,
+          # so a stale copy pins users to a deleted bundle.
+          aws s3 cp dist/index.html "s3://${{ vars.WEB_BUCKET }}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html; charset=utf-8"
+
+      - name: Invalidate CloudFront
+        run: |
+          set -euo pipefail
+          id=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/index.html" "/" \
+            --query 'Invalidation.Id' --output text)
+          echo "invalidation ${id}"
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --id "$id"
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/")
+          test "$code" = "200" || { echo "SPA returned ${code}" >&2; exit 1; }
+
+          # A deep link must reach the SPA, not an S3 404 -- this is the
+          # custom_error_response rewrite in the CloudFront distribution.
+          code=$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/login")
+          test "$code" = "200" || { echo "SPA routing returned ${code}" >&2; exit 1; }
+
+          echo "SPA OK"
