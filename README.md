@@ -1,6 +1,6 @@
 # Sensory Platform
 
-[![CI](https://github.com/josiahdegrasse-cloud/Sensory-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/josiahdegrasse-cloud/Sensory-Platform/actions/workflows/ci.yml)
+[![CI](https://github.com/FermIQDataTeam/Sensory-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/FermIQDataTeam/Sensory-Platform/actions/workflows/ci.yml)
 
 Sensory Platform connects food-product evidence, research operations, decisions,
 concept validation, and commercialization reporting in one project workspace.
@@ -9,6 +9,29 @@ concept validation, and commercialization reporting in one project workspace.
 
 [Open the live demo](https://sensory-platform.vercel.app) ·
 [Use the demo accounts](DEMO_INSTRUCTIONS.md)
+
+## My contributions
+
+I'm Josiah deGrasse. I led the design and implementation of the following work,
+using Claude Code and Codex for coding assistance, debugging, and verification:
+
+- Built AI-assisted research and commercialization-report workflows that connect
+  project evidence, decisions, concept results, and report versions.
+- Developed section-aware chunking and hybrid retrieval in the **separate Python
+  RAG service**, and integrated that service into this platform.
+- Designed Evidence Assist contracts and report-safe projections to restrict
+  external literature to permitted uses and keep raw retrieval data out of the
+  writer packet.
+- Implemented deterministic report validation, evidence checks, and QC gates
+  around generated output.
+- Integrated on-device Llama report generation through WebLLM, including
+  recovery from incomplete structured output.
+- Built source review, report approval, and claims-review steps for human
+  oversight before client release.
+
+These are my engineering contributions; the language models and underlying
+frameworks are third-party components. See the [AI evaluation record](docs/ai-evaluation.md)
+for reproducible checks, a documented failure fix, and the limits of the evidence.
 
 <p align="center">
   <img src="docs/assets/sensory-platform-desktop-insights.jpg" width="100%" alt="Sensory Platform desktop insights workspace comparing live panel evidence across product prototypes" />
@@ -105,6 +128,50 @@ model.
 
 ## Architecture
 
+```mermaid
+flowchart TD
+  subgraph Platform["This repository: browser application"]
+    UI["React frontend"]
+    Guard["Evidence Assist contract validation and safe projection"]
+    Review["Administrator source review"]
+    Packet["Bounded writer packet"]
+    Llama["Local Llama inference via WebLLM"]
+    QC["Deterministic report and PDF QC"]
+    Approval["Human report and claims approval"]
+    Release["Approved client report"]
+  end
+  DB["Supabase Auth and Postgres with RLS"]
+  subgraph Research["Separate Python research service: not included here"]
+    API["Authenticated research API"]
+    Retrieval["Literature retrieval: section-aware chunks and hybrid search"]
+    Assist["Evidence Assist classification and claim permissions"]
+    API --> Retrieval --> Assist
+  end
+  UI <--> DB
+  UI -->|Authenticated request| API
+  DB -->|Tenant-scoped project facts| API
+  Assist --> Guard --> Review --> Packet
+  UI -->|Canonical report context| Packet
+  Packet --> Llama --> QC
+  QC -->|Repairable findings: up to two rewrites| Llama
+  QC -->|No critical blockers| Approval --> Release
+```
+
+This repository contains the React integration, Evidence Assist contracts,
+local writer, and deterministic report QC. The Python ingestion, index,
+retrieval, and backend evidence-classification implementation is **not included**;
+references to `rag_food/` in the documentation refer to that separate service.
+Reviewers can inspect the frontend boundary in
+[`src/app/lib/evidence-assist/`](src/app/lib/evidence-assist/) and the
+[service contract](docs/evidence-assist.md), but cannot reproduce the full
+retrieval pipeline from this checkout alone.
+
+The model receives approved project facts and bounded literature guidance.
+Those controls reduce risk; they do not prove that every generated claim is
+supported. Draft preview/export eligibility is distinct from approval for client
+release. The [evaluation record](docs/ai-evaluation.md) distinguishes fixture
+tests from live-service and live-model evaluation.
+
 | Layer | Technology |
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, React Router, TanStack Query, Tailwind CSS, and Radix UI |
@@ -158,6 +225,7 @@ Authorization, migration, coverage, and browser checks are available through
 - [Product principles](PRODUCT.md)
 - [Design contract](DESIGN.md)
 - [Evidence Assist](docs/evidence-assist.md)
+- [AI evaluation and documented failure case](docs/ai-evaluation.md)
 - [AI operations and governance](docs/ai-operations-governance.md)
 - [Local report writing](docs/local-llama-report-writing.md)
 - [Study fielding workflow](docs/study-fielding-workflow.md)
