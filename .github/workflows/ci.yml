@@ -53,7 +53,11 @@ jobs:
       - name: Test migration drift parser
         run: npx pnpm@10 run test:migration-drift
 
+      - name: Test database type generation
+        run: npx pnpm@10 run test:db-types
+
       - name: Check database.types.ts is in sync with the schema
+        id: database_types
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: golkgpeqenyqrcyawjdt
@@ -68,13 +72,8 @@ jobs:
             exit 0
           fi
 
-          generated_types="$(mktemp)"
-          trap 'rm -f "${generated_types}"' EXIT
-          curl --fail-with-body --silent --show-error \
-            --retry 3 --retry-all-errors \
-            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/types/typescript?included_schemas=public%2Cgraphql_public" \
-            | jq --join-output --exit-status '.types' > "${generated_types}"
+          generated_types="${RUNNER_TEMP}/database.types.ts"
+          node scripts/generate-database-types.mjs --output "$generated_types"
 
           if ! cmp --silent "${generated_types}" src/app/lib/db/database.types.ts; then
             echo "::error::database.types.ts is out of date with the live schema."
@@ -83,6 +82,15 @@ jobs:
             exit 1
           fi
           echo "OK — database.types.ts matches the live schema."
+
+      - name: Preserve generated types when the drift check fails
+        if: failure() && steps.database_types.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-database-types
+          path: ${{ runner.temp }}/database.types.ts
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Lint
         run: npx pnpm@10 run lint

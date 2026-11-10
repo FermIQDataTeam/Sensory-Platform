@@ -23,7 +23,8 @@
     "test:rls:local": "bash scripts/run-local-rls-tests.sh",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config config/playwright.config.ts",
-    "db:types": "supabase gen types typescript --linked --schema public --schema graphql_public > src/app/lib/db/database.types.ts"
+    "db:types": "node scripts/generate-database-types.mjs",
+    "test:db-types": "node --test scripts/generate-database-types.test.mjs"
   },
   "dependencies": {
     "@mlc-ai/web-llm": "^0.2.84",
@@ -48,7 +49,7 @@
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
     "exceljs": "^4.4.0",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "0.487.0",
@@ -83,10 +84,11 @@
   },
   "pnpm": {
     "overrides": {
-      "brace-expansion@<2": "1.1.18",
-      "brace-expansion@>=2 <3": "2.1.4",
-      "brace-expansion@>=4 <6": "5.0.9",
-      "dompurify@<=3.4.12": "3.4.13",
+      "brace-expansion@<2": "1.1.21",
+      "brace-expansion@>=2 <3": "2.1.7",
+      "brace-expansion@>=4 <6": "5.0.12",
+      "dompurify@<3.4.17": "3.4.17",
+      "fflate@>=0.8.0 <0.8.3": "0.8.3",
       "uuid@<11.1.1": "11.1.1"
     }
   }

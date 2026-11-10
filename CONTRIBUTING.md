@@ -48,7 +48,11 @@ for missing schema behavior.
 2. Add a forward migration in `supabase/migrations/` using the existing
    `YYYYMMDDHHMMSS_snake_case.sql` naming convention.
 3. Apply the migration in the intended release order.
-4. Regenerate types from the linked schema with `pnpm db:types`.
+4. Regenerate types from the live schema with `pnpm db:types`. Set
+   `SUPABASE_ACCESS_TOKEN` in your shell; do not commit it. The command defaults
+   to the production project used by CI; set `SUPABASE_PROJECT_REF` explicitly
+   when targeting another project. Both local generation and CI use the same
+   read-only Supabase Management API for `public` and `graphql_public`.
 5. Never edit `src/app/lib/db/database.types.ts` by hand.
 6. Run the generated-type, migration-drift, tenant-isolation, type, test, and
    build checks that apply.
@@ -59,6 +63,14 @@ stop and document the mismatch before attempting a fix.
 CI fails closed on `main` when the linked production schema is ahead of the
 branch or generated database types are stale. Never apply a production migration
 ahead of the code that depends on it.
+
+Type generation validates the API response before replacing the file, so a
+failed request leaves the current types intact. Run `pnpm test:db-types` when
+changing that generator. If CI detects drift, its `generated-database-types`
+artifact preserves the exact output for inspection; review the complete diff
+and project identity before adopting it. Generator metadata or formatting can
+also change without a database migration, so investigate rather than hand-edit
+the file or weaken the comparison.
 
 ## Product invariants
 

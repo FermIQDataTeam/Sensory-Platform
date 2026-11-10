@@ -1,5 +1,36 @@
 # Sensory Platform operations runbook
 
+## Deployment topology
+
+The frontend has two deployment paths: the existing Vercel deployment and an
+AWS development deployment to S3 behind CloudFront in `eu-west-2`. The AWS
+workflow runs alongside Vercel; it does not by itself establish production
+cutover or retirement of Vercel.
+
+The source of truth for frontend publishing is
+[`.github/workflows/deploy-aws-dev.yml`](../.github/workflows/deploy-aws-dev.yml):
+
+- It runs manually or on pushes to `main` affecting the listed application,
+  build, or workflow paths. Documentation-only changes do not trigger an AWS
+  deployment through that path filter.
+- The `aws-dev` environment uses GitHub OIDC to assume a deployment role.
+  Configuration names are `AWS_DEPLOY_ROLE_ARN`, `WEB_BUCKET`,
+  `CLOUDFRONT_DISTRIBUTION_ID`, and `APP_URL`.
+- The build uses `VITE_NFI_RAG_URL=/api`: CloudFront serves the SPA and routes
+  `/api/*` to the research service on the same origin. Supabase continues to
+  provide authentication and the database.
+- Assets are uploaded before `index.html`; the workflow applies separate cache
+  policies, invalidates `/` and `/index.html`, waits for completion, and checks
+  HTTP 200 responses at `/` and `/login`. Those smoke checks do not verify an
+  authenticated report-generation workflow.
+
+Shared CloudFront and API infrastructure is owned by the private
+`FermIQDataTeam/Sensory-Analysis-RAG` repository under `infra/aws-dev`.
+The public dashboard repository contains the frontend publishing workflow and
+client integration, not the complete AWS infrastructure or Python service.
+The Vercel rollback instructions below apply to the Vercel path; an AWS rollback
+must be coordinated with the infrastructure owner and verified separately.
+
 ## Branded tenant setup
 
 Before a public domain exists, run the Vite app and use
