@@ -130,6 +130,7 @@ model.
 
 ```mermaid
 flowchart TD
+  Hosting["Frontend delivery: Vercel or S3 through AWS CloudFront"]
   subgraph Platform["This repository: browser application"]
     UI["React frontend"]
     Guard["Evidence Assist contract validation and safe projection"]
@@ -141,12 +142,13 @@ flowchart TD
     Release["Approved client report"]
   end
   DB["Supabase Auth and Postgres with RLS"]
-  subgraph Research["Separate Python research service: not included here"]
+  subgraph Research["Separate private Python research service: not included here"]
     API["Authenticated research API"]
     Retrieval["Literature retrieval: section-aware chunks and hybrid search"]
     Assist["Evidence Assist classification and claim permissions"]
     API --> Retrieval --> Assist
   end
+  Hosting --> UI
   UI <--> DB
   UI -->|Authenticated request| API
   DB -->|Tenant-scoped project facts| API
@@ -159,12 +161,22 @@ flowchart TD
 
 This repository contains the React integration, Evidence Assist contracts,
 local writer, and deterministic report QC. The Python ingestion, index,
-retrieval, and backend evidence-classification implementation is **not included**;
-references to `rag_food/` in the documentation refer to that separate service.
-Reviewers can inspect the frontend boundary in
-[`src/app/lib/evidence-assist/`](src/app/lib/evidence-assist/) and the
-[service contract](docs/evidence-assist.md), but cannot reproduce the full
-retrieval pipeline from this checkout alone.
+retrieval, and backend evidence-classification implementation lives in the
+**private `FermIQDataTeam/Sensory-Analysis-RAG` repository** and is not included
+here. References to `rag_food/` in the documentation describe that service;
+they are not paths available in this public checkout.
+
+| Publicly inspectable here | Requires access to the private service repository |
+| --- | --- |
+| [Authenticated research client](src/app/lib/rag-client.ts) and [Evidence Assist contracts and guards](src/app/lib/evidence-assist/) | Python ingestion, section-aware chunking, index, hybrid retrieval, and backend classification |
+| [Local Llama writer](src/app/lib/local-llama/report-writer.ts), [deterministic QC](src/app/lib/report-qc/), and [evaluation record](docs/ai-evaluation.md) | Backend tests, retrieval benchmark implementation, and service deployment infrastructure |
+| [AWS frontend deployment workflow](.github/workflows/deploy-aws-dev.yml) | Shared CloudFront/API infrastructure under `infra/aws-dev` |
+
+The public [service contract and evidence policy](docs/evidence-assist.md)
+explain the integration boundary. They do not make the private implementation
+independently auditable or allow reviewers to reproduce the full retrieval
+pipeline. This portfolio distinguishes public code evidence from descriptions
+of work in the private service.
 
 The model receives approved project facts and bounded literature guidance.
 Those controls reduce risk; they do not prove that every generated claim is
@@ -178,7 +190,24 @@ tests from live-service and live-model evaluation.
 | Data | Supabase Postgres, Auth, Storage, Edge Functions, and Row Level Security |
 | Research | Tenant-scoped hybrid retrieval, section-aware chunks, and Evidence Assist |
 | Local inference | WebLLM with quantized Llama 3.2 models |
-| Operations | Vercel, Sentry, audit trails, dependency monitoring, bundle budgets, and schema-drift checks |
+| Frontend deployment | Vercel plus an AWS development deployment to S3 behind CloudFront |
+| Operations | GitHub Actions, Sentry, audit trails, dependency monitoring, bundle budgets, and schema-drift checks |
+
+### Deployment paths
+
+The [AWS deployment workflow](.github/workflows/deploy-aws-dev.yml) publishes
+the Vite build to S3 in `eu-west-2` and invalidates CloudFront. It runs alongside
+Vercel; the workflow does not establish a completed production cutover. In the
+AWS environment, the same CloudFront distribution serves the frontend and
+routes `/api/*` to the research service, using `VITE_NFI_RAG_URL=/api`.
+Supabase remains the authentication and database layer, and Llama inference
+still runs in the browser.
+
+Deployment uses GitHub OIDC, uploads assets before `index.html`, and checks the
+root and `/login` routes. A [successful AWS development deployment](https://github.com/FermIQDataTeam/Sensory-Platform/actions/runs/34836101127)
+is recorded for September 14, 2026; that historical result is not a current
+uptime check. See the [deployment details](docs/operations-runbook.md#deployment-topology)
+for triggers, configuration, and repository ownership.
 
 ## Local development
 

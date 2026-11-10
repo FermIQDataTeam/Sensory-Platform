@@ -22,8 +22,12 @@
 
 ## Boundaries
 
-The Vercel research service supports Evidence Assist, literature management, and
-diagnostics. It is separate from local report writing.
+The remote research service supports Evidence Assist, literature management,
+and diagnostics. The existing Vercel path and the AWS development path are
+described in the [deployment topology](operations-runbook.md#deployment-topology).
+On AWS, CloudFront routes `/api/*` to the service. The Python implementation and
+shared AWS infrastructure live in a separate private repository; both deployment
+paths are distinct from report writing in the administrator's browser.
 
 Local report generation requires WebGPU, sufficient storage, and compatible
 graphics memory. If the model cannot start or generation is cancelled, the
