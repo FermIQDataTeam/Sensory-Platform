@@ -23,7 +23,8 @@
     "test:rls:local": "bash scripts/run-local-rls-tests.sh",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config config/playwright.config.ts",
-    "db:types": "supabase gen types typescript --linked --schema public --schema graphql_public > src/app/lib/db/database.types.ts"
+    "db:types": "node scripts/generate-database-types.mjs",
+    "test:db-types": "node --test scripts/generate-database-types.test.mjs"
   },
   "dependencies": {
     "@mlc-ai/web-llm": "^0.2.84",
